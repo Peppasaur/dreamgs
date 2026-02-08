@@ -43,7 +43,7 @@ class StableDiffusion(nn.Module):
             print(f"[INFO] using hugging face custom model key: {hf_key}")
             model_key = hf_key
         elif self.sd_version == "2.1":
-            model_key = "stabilityai/stable-diffusion-2-1-base"
+            model_key = "Manojb/stable-diffusion-2-1-base"
         elif self.sd_version == "2.0":
             model_key = "stabilityai/stable-diffusion-2-base"
         elif self.sd_version == "1.5":
@@ -55,9 +55,11 @@ class StableDiffusion(nn.Module):
 
         self.dtype = torch.float16 if fp16 else torch.float32
 
+        local_model_path = "/home/featurize/stable-diffusion-2-1-base"
+
         # Create model
         pipe = StableDiffusionPipeline.from_pretrained(
-            model_key, torch_dtype=self.dtype
+            local_model_path, torch_dtype=self.dtype,local_files_only=True
         )
 
         if vram_O:
@@ -75,7 +77,8 @@ class StableDiffusion(nn.Module):
         self.unet = pipe.unet
 
         self.scheduler = DDIMScheduler.from_pretrained(
-            model_key, subfolder="scheduler", torch_dtype=self.dtype
+            local_model_path, subfolder="scheduler", torch_dtype=self.dtype,
+            local_files_only=True
         )
 
         del pipe
@@ -188,7 +191,7 @@ class StableDiffusion(nn.Module):
 
         # seems important to avoid NaN...
         # grad = grad.clamp(-1, 1)
-
+        
         target = (latents - grad).detach()
         loss = 0.5 * F.mse_loss(latents.float(), target, reduction='sum') / latents.shape[0]
 

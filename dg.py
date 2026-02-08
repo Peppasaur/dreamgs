@@ -38,9 +38,11 @@ class GUI:
 
         self.guidance_sd = None
         self.guidance_zero123 = None
+        self.guidance_wan = None
 
         self.enable_sd = False
         self.enable_zero123 = False
+        self.enable_wan = False
 
         # renderer
         self.renderer = Renderer(sh_degree=self.opt.sh_degree)
@@ -123,6 +125,7 @@ class GUI:
 
         self.enable_sd = self.opt.lambda_sd > 0 and self.prompt != ""
         self.enable_zero123 = self.opt.lambda_zero123 > 0 and self.input_img is not None
+        self.enable_wan = self.opt.lambda_wan > 0 and self.prompt != ""
 
         # lazy load guidance model
         if self.guidance_sd is None and self.enable_sd:
@@ -146,6 +149,12 @@ class GUI:
                 self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/zero123-xl-diffusers')
             print(f"[INFO] loaded zero123!")
 
+        if self.guidance_wan is None and self.enable_wan:
+            print(f"[INFO] loading Wan 2.2...")
+            from guidance.wan_utils import WanRectifiedFlow
+            self.guidance_wan = WanRectifiedFlow(self.device)
+            print(f"[INFO] loaded Wan 2.2!")
+
         # input image
         if self.input_img is not None:
             self.input_img_torch = torch.from_numpy(self.input_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
@@ -167,6 +176,9 @@ class GUI:
                     c_list.append(c)
                     v_list.append(v)
                 self.guidance_zero123.embeddings = [torch.cat(c_list, 0), torch.cat(v_list, 0)]
+
+            if self.enable_wan:
+                self.guidance_wan.get_text_embeds([self.prompt], [self.negative_prompt])
 
     def train_step(self):
         starter = torch.cuda.Event(enable_timing=True)
@@ -208,6 +220,7 @@ class GUI:
             for _ in range(self.opt.batch_size):
 
                 # render random view
+                
                 ver = np.random.randint(min_ver, max_ver)
                 hor = np.random.randint(-180, 180)
                 radius = np.random.uniform(-0.5, 0.5) 
@@ -219,7 +232,8 @@ class GUI:
                 pose = orbit_camera(self.opt.elevation + ver, hor, self.opt.radius + radius)
                 poses.append(pose)
 
-                cur_cam = MiniCam(pose, render_resolution, render_resolution, self.cam.fovy, self.cam.fovx, self.cam.near, self.cam.far)
+                #cur_cam = MiniCam(pose, render_resolution, render_resolution, self.cam.fovy, self.cam.fovx, self.cam.near, self.cam.far)
+                cur_cam = self.fixed_cam
 
                 bg_color = torch.tensor([1, 1, 1] if np.random.rand() > self.opt.invert_bg_prob else [0, 0, 0], dtype=torch.float32, device="cuda")
                 out = self.renderer.render(cur_cam, bg_color=bg_color)
@@ -248,11 +262,18 @@ class GUI:
                 if self.opt.mvdream:
                     loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, poses, step_ratio)
                 else:
-                    loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, step_ratio)
+                    sd_loss = self.opt.lambda_sd * self.guidance_sd.train_step(images, step_ratio)
+                    print("sd_loss", sd_loss.item())
+                    loss = sd_loss
+                
 
             if self.enable_zero123:
                 loss = loss + self.opt.lambda_zero123 * self.guidance_zero123.train_step(images, vers, hors, radii, step_ratio) / self.opt.batch_size
             
+            if self.enable_wan:
+                wan_loss = self.guidance_wan.train_step(images, step_ratio)
+                print("wan_loss", wan_loss.item())
+                loss = self.opt.lambda_wan * wan_loss
 
             # optimize step
             loss.backward()
@@ -438,7 +459,7 @@ class GUI:
 
 
     # no gui mode
-    def train(self, iters=500, ui=False):
+    def train(self, iters=100, ui=False):
         if self.gui:
             from visualizer.visergui import ViserViewer
             self.viser_gui = ViserViewer(device="cuda", viewer_port=8080)

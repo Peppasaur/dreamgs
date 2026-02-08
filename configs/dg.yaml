@@ -2,7 +2,7 @@
 # input rgba image path (default to None, can be load in GUI too)
 input: 
 # input text prompt (default to None, can be input in GUI too)
-prompt:
+prompt: "a girl in a red dress"
 negative_prompt:
 # input mesh for stage 2 (auto-search from stage 1 output path if None)
 mesh:
@@ -27,13 +27,14 @@ imagedream: False
 stable_zero123: False 
 # guidance loss weights (0 to disable)
 lambda_sd: 0
-lambda_zero123: 1
+lambda_zero123: 0
+lambda_wan: 1
 # warmup rgb supervision for image-to-3d
 warmup_rgb_loss: True
 # training batch size per iter
 batch_size: 1
 # training iterations for stage 1
-iters: 500
+iters: 100
 # whether to linearly anneal timestep
 anneal_timestep: True
 # training iterations for stage 2
